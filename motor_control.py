@@ -1,11 +1,11 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 import math
 import threading
 import time
 
 try:
     from gpiozero import OutputDevice
-except ImportError:  # pragma: no cover - fallback for non-hardware environments
+except ImportError:  # pragma: no cover
     class OutputDevice:
         def __init__(self, pin):
             self.pin = pin
@@ -19,7 +19,7 @@ except ImportError:  # pragma: no cover - fallback for non-hardware environments
 
 try:
     import smbus
-except ImportError:  # pragma: no cover - fallback for non-hardware environments
+except ImportError:  # pragma: no cover
     smbus = None
 
 
@@ -80,41 +80,49 @@ class PCA9685:
 
 
 class RobotControl:
+    LEFT_MOTOR_INVERT = False
+    RIGHT_MOTOR_INVERT = False
+    LEFT_MOTOR_SCALE = 1.00
+    RIGHT_MOTOR_SCALE = 1.00
+    TURN_STYLE = "arc"
+    TURN_PWM = 58
+    TURN_INNER_RATIO = 0.25
+
     def __init__(self):
         self.lock = threading.RLock()
         self.pwm = PCA9685(0x40)
         self.pwm.setPWMFreq(50)
-
         self.motorD1 = OutputDevice(25)
         self.motorD2 = OutputDevice(24)
         self.current_speed = 70
         self.stop()
 
+    def set_speed(self, speed):
+        with self.lock:
+            self.current_speed = max(0, min(100, int(speed)))
+
     def move(self, action, speed=None):
         with self.lock:
             if speed is not None:
-                self.current_speed = max(0, min(100, int(speed)))
+                self.set_speed(speed)
+            speed = self.current_speed
 
             if action == "forward":
-                self.drive(self.current_speed, 0)
+                self._apply_drive(speed, speed)
             elif action == "backward":
-                self.drive(-self.current_speed, 0)
+                self._apply_drive(-speed, -speed)
             elif action == "left":
-                self.drive(0, -self.current_speed)
+                self._turn("left", speed)
             elif action == "right":
-                self.drive(0, self.current_speed)
+                self._turn("right", speed)
             else:
                 self.stop()
 
     def drive(self, forward_speed, turn_rate=0):
         with self.lock:
-            left_speed = max(-100, min(100, int(forward_speed - turn_rate)))
-            right_speed = max(-100, min(100, int(forward_speed + turn_rate)))
-
-            self._set_motor("A", left_speed)
-            self._set_motor("C", left_speed)
-            self._set_motor("B", right_speed)
-            self._set_motor("D", right_speed)
+            left_speed = max(-100, min(100, int(round(forward_speed - turn_rate))))
+            right_speed = max(-100, min(100, int(round(forward_speed + turn_rate))))
+            self._apply_drive(left_speed, right_speed)
 
     def stop(self):
         with self.lock:
@@ -122,6 +130,36 @@ class RobotControl:
                 self.pwm.setDutycycle(channel, 0)
             self.motorD1.off()
             self.motorD2.off()
+
+    def _turn(self, direction, requested_speed):
+        turn_pwm = max(self.TURN_PWM, int(requested_speed))
+        inner = int(round(turn_pwm * self.TURN_INNER_RATIO))
+        if self.TURN_STYLE == "spin":
+            if direction == "left":
+                self._apply_drive(-turn_pwm, turn_pwm)
+            else:
+                self._apply_drive(turn_pwm, -turn_pwm)
+            return
+
+        if direction == "left":
+            self._apply_drive(inner, turn_pwm)
+        else:
+            self._apply_drive(turn_pwm, inner)
+
+    def _apply_drive(self, left_speed, right_speed):
+        calibrated_left = self._calibrate_side(left_speed, self.LEFT_MOTOR_INVERT, self.LEFT_MOTOR_SCALE)
+        calibrated_right = self._calibrate_side(right_speed, self.RIGHT_MOTOR_INVERT, self.RIGHT_MOTOR_SCALE)
+        self._set_motor("A", calibrated_left)
+        self._set_motor("C", calibrated_left)
+        self._set_motor("B", calibrated_right)
+        self._set_motor("D", calibrated_right)
+
+    @staticmethod
+    def _calibrate_side(speed, invert_flag, scale):
+        calibrated = int(round(speed * scale))
+        if invert_flag:
+            calibrated *= -1
+        return max(-100, min(100, calibrated))
 
     def _set_motor(self, name, signed_speed):
         speed = abs(int(signed_speed))
