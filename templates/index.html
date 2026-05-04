@@ -1,0 +1,145 @@
+﻿<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 自動循線與手動駕駛控制台</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="app-shell">
+        <header class="hero">
+            <div>
+                <p class="eyebrow">AI CAR PROJECT</p>
+                <h1>自動循線與手動駕駛控制台</h1>
+                <p class="subtitle">可切換手動與自動模式，調整車道顏色、速度與 PID，並同步顯示 YOLO、偏移量與控制狀態。</p>
+            </div>
+            <div class="mode-chip" id="mode-chip">MANUAL</div>
+        </header>
+
+        <main class="dashboard">
+            <section class="camera-panel card">
+                <div class="section-title-row">
+                    <h2>即時畫面</h2>
+                    <span class="tag" id="yolo-tag">YOLO model missing</span>
+                </div>
+                <div class="video-frame">
+                    <img src="{{ url_for('video_feed') }}" id="video-stream" alt="即時攝影機畫面">
+                </div>
+                <div class="status-grid">
+                    <div class="status-card">
+                        <span class="label">AI 狀態</span>
+                        <strong id="ai-message">Manual mode, last command: stop</strong>
+                    </div>
+                    <div class="status-card">
+                        <span class="label">車道偏移</span>
+                        <strong><span id="lane-offset">0.0</span> px</strong>
+                    </div>
+                    <div class="status-card">
+                        <span class="label">控制狀態</span>
+                        <strong id="control-debug">idle</strong>
+                    </div>
+                    <div class="status-card">
+                        <span class="label">紅燈</span>
+                        <strong id="red-light">CLEAR</strong>
+                    </div>
+                    <div class="status-card">
+                        <span class="label">辨識物件</span>
+                        <strong id="object-list">No objects</strong>
+                    </div>
+                </div>
+            </section>
+
+            <aside class="control-panel">
+                <section class="card">
+                    <h2>模式設定</h2>
+                    <div class="toggle-row">
+                        <button class="toggle-btn active" data-mode="manual" id="manual-mode-btn">手動駕駛</button>
+                        <button class="toggle-btn" data-mode="auto" id="auto-mode-btn">自動駕駛</button>
+                    </div>
+                </section>
+
+                <section class="card">
+                    <h2>循線參數</h2>
+                    <div id="settings-feedback" class="settings-feedback" aria-live="polite"></div>
+                    <div class="form-grid">
+                        <label>
+                            車道線顏色
+                            <select id="lane-color">
+                                <option value="yellow">黃色</option>
+                                <option value="blue">藍色</option>
+                                <option value="white">白色</option>
+                            </select>
+                        </label>
+
+                        <label>
+                            速度
+                            <div class="inline-control">
+                                <input type="range" id="speed" min="0.40" max="1" step="0.01" value="0.50">
+                                <span id="speed-value">0.70</span>
+                            </div>
+                        </label>
+
+                        <label>
+                            Kp
+                            <input type="number" id="kp" step="0.01" min="0" value="0.35">
+                        </label>
+
+                        <label>
+                            Ki
+                            <input type="number" id="ki" step="0.01" min="0" value="0.00">
+                        </label>
+
+                        <label>
+                            Kd
+                            <input type="number" id="kd" step="0.01" min="0" value="0.18">
+                        </label>
+                    </div>
+                    <button class="primary-btn" id="apply-settings">套用設定</button>
+                </section>
+
+                <section class="card" id="recording-panel">
+                    <div class="section-title-row">
+                        <h2>錄影</h2>
+                        <span id="rec-indicator" class="tag">● 未錄影</span>
+                    </div>
+                    <div class="status-grid" style="margin-bottom:8px">
+                        <div class="status-card">
+                            <span class="label">時長</span>
+                            <strong><span id="rec-duration">0.0</span> s</strong>
+                        </div>
+                        <div class="status-card">
+                            <span class="label">幀數</span>
+                            <strong><span id="rec-frames">0</span></strong>
+                        </div>
+                    </div>
+                    <div id="rec-filename" style="font-size:0.75rem;color:#888;margin-bottom:4px;word-break:break-all;"></div>
+                    <div id="rec-feedback" class="settings-feedback" aria-live="polite" style="margin-bottom:8px;"></div>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                        <button class="primary-btn" id="rec-start-btn" onclick="startRecording()">開始錄影</button>
+                        <button class="primary-btn" id="rec-stop-btn" onclick="stopRecording()" disabled style="background:#888">停止錄影</button>
+                        <button class="toggle-btn" onclick="window.open('/api/recordings','_blank')">下載清單</button>
+                    </div>
+                </section>
+
+                <section class="card" id="manual-panel">
+                    <div class="section-title-row">
+                        <h2>手動控制</h2>
+                        <span class="hint">支援滑鼠按鍵與鍵盤 WASD / 方向鍵</span>
+                    </div>
+                    <div class="drive-pad">
+                        <button class="drive-btn drive-up" type="button" data-action="forward" onclick="handleDriveClick('forward')">前進</button>
+                        <button class="drive-btn drive-left" type="button" data-action="left" onclick="handleDriveClick('left')">左轉</button>
+                        <button class="drive-btn drive-stop" type="button" data-action="stop" onclick="handleDriveClick('stop')">停止</button>
+                        <button class="drive-btn drive-right" type="button" data-action="right" onclick="handleDriveClick('right')">右轉</button>
+                        <button class="drive-btn drive-down" type="button" data-action="backward" onclick="handleDriveClick('backward')">後退</button>
+                    </div>
+                </section>
+            </aside>
+        </main>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>
+
